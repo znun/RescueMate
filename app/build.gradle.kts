@@ -46,6 +46,6 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 
     implementation("com.google.android.gms:play-services-location:21.2.0")
-
+    implementation ("com.google.code.gson:gson:2.8.8")
 
 }
