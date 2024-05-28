@@ -3,18 +3,23 @@ package com.example.rescue_mate
 
 import android.Manifest
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
+import android.accessibilityservice.AccessibilityService
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.ContactsContract
+import android.preference.PreferenceManager
+import android.provider.Settings
 import android.telephony.SmsManager
+import android.text.TextUtils
 import android.util.Log
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -23,32 +28,49 @@ import com.google.android.gms.location.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private val REQUEST_PERMISSIONS = 1
     private lateinit var locationCallback: LocationCallback
-
-    private var volumeButtonPressed = false
-    private val volumeButtonHandler = Handler(Looper.getMainLooper())
-    private val volumeButtonRunnable = Runnable { volumeButtonPressed = false }
-
-    private val PREFS_NAME = "com.example.rescue_mate.prefs"
-    private val PREFS_KEY_CONTACTS = "contacts"
+    private val REQUEST_PERMISSIONS = 1
+    private lateinit var prefs: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        prefs = PreferenceManager.getDefaultSharedPreferences(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         val sendLocationButton: Button = findViewById(R.id.send_location_button)
         sendLocationButton.setOnClickListener {
             Log.d("LocationSMS", "Send Location button clicked")
-            requestPermissionsIfNeeded()
+            requestPermissionsIfNeededForButton()
         }
 
         val manageContactsButton: Button = findViewById(R.id.manage_contacts_button)
         manageContactsButton.setOnClickListener {
-            val intent = Intent(this, ContactManagerActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, ContactManagerActivity::class.java))
+        }
+
+        val enableServiceButton: Button = findViewById(R.id.enable_service_button)
+        enableServiceButton.setOnClickListener {
+            prefs.edit().putBoolean("service_enabled", true).apply()
+            if (isAccessibilityServiceEnabled(this, VolumeButtonAccessibilityService::class.java)) {
+                startVolumeButtonService()
+                Toast.makeText(this, "Service enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                showAccessibilityServiceDialog()
+            }
+        }
+
+        val disableServiceButton: Button = findViewById(R.id.disable_service_button)
+        disableServiceButton.setOnClickListener {
+            prefs.edit().putBoolean("service_enabled", false).apply()
+            stopVolumeButtonService()
+            Toast.makeText(this, "Service disabled", Toast.LENGTH_SHORT).show()
+        }
+
+        // Start the service if it is enabled in preferences
+        if (prefs.getBoolean("service_enabled", false)) {
+            startVolumeButtonService()
         }
 
         locationCallback = object : LocationCallback() {
@@ -60,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestPermissionsIfNeeded() {
+    private fun requestPermissionsIfNeededForButton() {
         val permissionsNeeded = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             permissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -73,11 +95,25 @@ class MainActivity : AppCompatActivity() {
             Log.d("LocationSMS", "Requesting permissions: $permissionsNeeded")
             ActivityCompat.requestPermissions(this, permissionsNeeded.toTypedArray(), REQUEST_PERMISSIONS)
         } else {
-            requestLocation()
+            requestLocationForButton()
         }
     }
 
-    private fun requestLocation() {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_PERMISSIONS) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                Log.d("LocationSMS", "Permissions granted")
+                requestLocationForButton()
+            } else {
+                Log.d("LocationSMS", "Permissions denied")
+                Toast.makeText(this, "Permissions required to send location SMS.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun requestLocationForButton() {
+        Log.d("LocationSMS", "Requesting location for button")
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "Location permission not granted", Toast.LENGTH_SHORT).show()
             return
@@ -89,11 +125,12 @@ class MainActivity : AppCompatActivity() {
             priority = LocationRequest.PRIORITY_HIGH_ACCURACY
         }
 
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null)
     }
 
     private fun sendLocationSMS(location: Location) {
         val contacts = loadContacts()
+        Log.d("MainActivity", "Loaded contacts: $contacts")
         if (contacts.isEmpty()) {
             Toast.makeText(this, "No contacts available", Toast.LENGTH_SHORT).show()
             return
@@ -125,33 +162,57 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadContacts(): MutableList<Contact> {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val contactsJson = prefs.getString(PREFS_KEY_CONTACTS, "[]")
+        val prefs = getSharedPreferences("example.rescue_mate.prefs", Context.MODE_PRIVATE)
+        val contactsJson = prefs.getString("contacts", "[]")
+        Log.d("MainActivity", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService>): Boolean {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        val colonSplitter = TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServices)
+        val myComponentName = ComponentName(context, service).flattenToString()
+        while (colonSplitter.hasNext()) {
+            val componentName = colonSplitter.next()
+            if (componentName.equals(myComponentName, ignoreCase = true)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun showAccessibilityServiceDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Enable Accessibility Service")
+            .setMessage("To use the volume button functionality, you need to enable the accessibility service. Would you like to enable it now?")
+            .setPositiveButton("Yes") { _, _ ->
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                startActivity(intent)
+            }
+            .setNegativeButton("No", null)
+            .show()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (!volumeButtonPressed) {
-                volumeButtonPressed = true
-                volumeButtonHandler.postDelayed(volumeButtonRunnable, 2000)
-                Log.d("LocationSMS", "Volume button pressed")
-                requestPermissionsIfNeeded()
-                return true
+            val intent = Intent(this, VolumeButtonService::class.java).apply {
+                action = "example.rescue_mate.VOLUME_BUTTON_PRESSED"
             }
+            startService(intent)
+            return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (volumeButtonPressed) {
-                Log.d("LocationSMS", "Volume button released")
-                volumeButtonHandler.removeCallbacks(volumeButtonRunnable)
-                volumeButtonPressed = false
-                return true
-            }
-        }
-        return super.onKeyUp(keyCode, event)
+    private fun startVolumeButtonService() {
+        val intent = Intent(this, VolumeButtonService::class.java)
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun stopVolumeButtonService() {
+        val intent = Intent(this, VolumeButtonService::class.java)
+        stopService(intent)
     }
 }
