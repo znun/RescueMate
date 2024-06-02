@@ -1,6 +1,5 @@
 package com.example.rescue_mate
 
-
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -8,6 +7,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
@@ -93,18 +94,21 @@ class VolumeButtonService : Service() {
 
     private fun sendLocationSMS(location: Location) {
         val contacts = loadContacts()
+        Log.d("MainActivity", "Loaded contacts: $contacts")
         if (contacts.isEmpty()) {
             Toast.makeText(this, "No contacts available", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"
-        Log.d("VolumeButtonService", "Location obtained: $message")
+        val batteryStatus = getBatteryStatus()
+        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}. $batteryStatus"
+        Log.d("LocationSMS", "Location obtained: $message")
         for (contact in contacts) {
             sendSMS(contact.number, message)
         }
         fusedLocationClient.removeLocationUpdates(locationCallback) // Stop location updates after getting the location
     }
+
 
     private fun sendSMS(phoneNumber: String, message: String) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
@@ -128,5 +132,18 @@ class VolumeButtonService : Service() {
         val contactsJson = prefs.getString("contacts", "[]")
         Log.d("VolumeButtonService", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
+    }
+    private fun getBatteryStatus(): String {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
+            this.registerReceiver(null, ifilter)
+        }
+
+        val batteryPct: Float? = batteryStatus?.let { intent ->
+            val level: Int = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale: Int = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            level / scale.toFloat() * 100
+        }
+
+        return "Battery Level: ${batteryPct?.toInt()}%"
     }
 }

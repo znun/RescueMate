@@ -1,10 +1,11 @@
 package com.example.rescue_mate
 
-
 import android.Manifest
-import android.content.Context
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.accessibilityservice.AccessibilityService
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
@@ -65,7 +66,11 @@ class MainActivity : AppCompatActivity() {
         disableServiceButton.setOnClickListener {
             prefs.edit().putBoolean("service_enabled", false).apply()
             stopVolumeButtonService()
-            Toast.makeText(this, "Service disabled", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Service disable Setting", Toast.LENGTH_SHORT).show()
+
+            // Navigate to Accessibility settings
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
         }
 
         // Start the service if it is enabled in preferences
@@ -136,7 +141,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"
+        val batteryStatus = getBatteryStatus()
+        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}. $batteryStatus"
         Log.d("LocationSMS", "Location obtained: $message")
         for (contact in contacts) {
             sendSMS(contact.number, message)
@@ -162,7 +168,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadContacts(): MutableList<Contact> {
-        val prefs = getSharedPreferences("example.rescue_mate.prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("com.example.res.prefs", Context.MODE_PRIVATE)
         val contactsJson = prefs.getString("contacts", "[]")
         Log.d("MainActivity", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
@@ -198,7 +204,7 @@ class MainActivity : AppCompatActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             val intent = Intent(this, VolumeButtonService::class.java).apply {
-                action = "example.rescue_mate.VOLUME_BUTTON_PRESSED"
+                action = "com.example.rescue_mate.VOLUME_BUTTON_PRESSED"
             }
             startService(intent)
             return true
@@ -214,5 +220,18 @@ class MainActivity : AppCompatActivity() {
     private fun stopVolumeButtonService() {
         val intent = Intent(this, VolumeButtonService::class.java)
         stopService(intent)
+    }
+    private fun getBatteryStatus(): String {
+        val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
+            this.registerReceiver(null, ifilter)
+        }
+
+        val batteryPct: Float? = batteryStatus?.let { intent ->
+            val level: Int = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale: Int = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            level / scale.toFloat() * 100
+        }
+
+        return "Battery Level: ${batteryPct?.toInt()}%"
     }
 }
