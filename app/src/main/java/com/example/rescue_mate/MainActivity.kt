@@ -1,15 +1,15 @@
 package com.example.rescue_mate
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.BatteryManager
-import android.accessibilityservice.AccessibilityService
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.BatteryManager
 import android.os.Bundle
 import android.preference.PreferenceManager
 import android.provider.Settings
@@ -35,9 +35,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        prefs = getSharedPreferences("com.example.rescue_mate.prefs", Context.MODE_PRIVATE)
+
+        // Debugging step: Log the user name to see if it's set correctly
+        val name = prefs.getString("user_name", null)
+        Log.d("MainActivity", "User name in prefs: $name")
+
+        if (name == null || name.isEmpty()) {
+            Log.d("MainActivity", "User name not set, launching NameEntryActivity")
+            val intent = Intent(this, NameEntryActivity::class.java)
+            startActivity(intent)
+            finish()
+            return
+        }
+
         setContentView(R.layout.activity_main)
 
-        prefs = PreferenceManager.getDefaultSharedPreferences(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         val sendLocationButton: Button = findViewById(R.id.send_location_button)
@@ -66,14 +80,9 @@ class MainActivity : AppCompatActivity() {
         disableServiceButton.setOnClickListener {
             prefs.edit().putBoolean("service_enabled", false).apply()
             stopVolumeButtonService()
-            Toast.makeText(this, "Service disable Setting", Toast.LENGTH_SHORT).show()
-
-            // Navigate to Accessibility settings
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
+            Toast.makeText(this, "Service disabled", Toast.LENGTH_SHORT).show()
         }
 
-        // Start the service if it is enabled in preferences
         if (prefs.getBoolean("service_enabled", false)) {
             startVolumeButtonService()
         }
@@ -142,7 +151,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         val batteryStatus = getBatteryStatus()
-        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}. $batteryStatus"
+//        val userName = prefs.getString("user_name", "Unknown User")
+//        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}. $batteryStatus. Name: $userName"
+//        Log.d("LocationSMS", "Location obtained: $message")
+        val userName = prefs.getString("user_name", "Unknown User")
+        val message = "$userName needs help, His Current Location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}\n $batteryStatus"
         Log.d("LocationSMS", "Location obtained: $message")
         for (contact in contacts) {
             sendSMS(contact.number, message)
@@ -168,7 +181,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadContacts(): MutableList<Contact> {
-        val prefs = getSharedPreferences("com.example.res.prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("com.example.rescue_mate.prefs", Context.MODE_PRIVATE)
         val contactsJson = prefs.getString("contacts", "[]")
         Log.d("MainActivity", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
@@ -221,6 +234,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, VolumeButtonService::class.java)
         stopService(intent)
     }
+
     private fun getBatteryStatus(): String {
         val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
             this.registerReceiver(null, ifilter)

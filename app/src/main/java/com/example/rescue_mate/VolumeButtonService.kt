@@ -8,11 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.BatteryManager
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.BatteryManager
 import android.os.Build
-import android.os.CountDownTimer
 import android.os.IBinder
 import android.telephony.SmsManager
 import android.util.Log
@@ -94,21 +93,22 @@ class VolumeButtonService : Service() {
 
     private fun sendLocationSMS(location: Location) {
         val contacts = loadContacts()
-        Log.d("MainActivity", "Loaded contacts: $contacts")
+        Log.d("VolumeButtonService", "Loaded contacts: $contacts")
         if (contacts.isEmpty()) {
             Toast.makeText(this, "No contacts available", Toast.LENGTH_SHORT).show()
             return
         }
 
         val batteryStatus = getBatteryStatus()
-        val message = "My current location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}. $batteryStatus"
+        val prefs = getSharedPreferences("com.example.rescue_mate.prefs", Context.MODE_PRIVATE)
+        val userName = prefs.getString("user_name", "Unknown User")
+        val message = "$userName needs help, His Current Location is: https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}\nBattery Level: $batteryStatus"
         Log.d("LocationSMS", "Location obtained: $message")
         for (contact in contacts) {
             sendSMS(contact.number, message)
         }
         fusedLocationClient.removeLocationUpdates(locationCallback) // Stop location updates after getting the location
     }
-
 
     private fun sendSMS(phoneNumber: String, message: String) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
@@ -119,11 +119,11 @@ class VolumeButtonService : Service() {
         try {
             val smsManager: SmsManager = SmsManager.getDefault()
             smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-            Toast.makeText(this, "SOS SMS Sent to $phoneNumber!", Toast.LENGTH_SHORT).show()
-            Log.d("VolumeButtonService", "SOS SMS sent to $phoneNumber")
+            Toast.makeText(this, "SMS Sent to $phoneNumber!", Toast.LENGTH_SHORT).show()
+            Log.d("VolumeButtonService", "SMS sent to $phoneNumber")
         } catch (e: Exception) {
             Log.e("VolumeButtonService", "Error sending SMS: ${e.message}")
-            Toast.makeText(this, "Failed to send SOS SMS. Please try again.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Failed to send SMS. Please try again.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -133,6 +133,7 @@ class VolumeButtonService : Service() {
         Log.d("VolumeButtonService", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
     }
+
     private fun getBatteryStatus(): String {
         val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
             this.registerReceiver(null, ifilter)
@@ -144,6 +145,6 @@ class VolumeButtonService : Service() {
             level / scale.toFloat() * 100
         }
 
-        return "Battery Level: ${batteryPct?.toInt()}%"
+        return "${batteryPct?.toInt()}%"
     }
 }

@@ -1,6 +1,5 @@
 package com.example.rescue_mate
 
-
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent

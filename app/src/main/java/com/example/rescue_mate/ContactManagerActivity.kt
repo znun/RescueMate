@@ -1,5 +1,6 @@
 package com.example.rescue_mate
 
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -77,14 +78,14 @@ class ContactManagerActivity : AppCompatActivity() {
     }
 
     private fun loadContacts(): MutableList<Contact> {
-        val prefs = getSharedPreferences("com.example.smscontact.prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("com.example.rescue_mate.prefs", Context.MODE_PRIVATE)
         val contactsJson = prefs.getString("contacts", "[]")
         Log.d("ContactManager", "Loaded contacts: $contactsJson")
         return Contact.fromJson(contactsJson)
     }
 
     private fun saveContacts(contacts: List<Contact>) {
-        val prefs = getSharedPreferences("com.example.smscontact.prefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("com.example.rescue_mate.prefs", Context.MODE_PRIVATE)
         val contactsJson = Contact.toJson(contacts)
         Log.d("ContactManager", "Saving contacts: $contactsJson")
         prefs.edit().putString("contacts", contactsJson).apply()

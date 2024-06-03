@@ -1,5 +1,6 @@
 package com.example.rescue_mate
 
+
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
